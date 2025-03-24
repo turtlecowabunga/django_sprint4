@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.urls import reverse
 
 User = get_user_model()
 
@@ -109,6 +110,9 @@ class Post(CommonAttributes):
     def __str__(self):
         return self.title
 
+    def get_absolute_url(self):
+        return reverse("blog:post_detail", kwargs={"post_id": self.pk})
+
 
 class Comment(models.Model):
     text = models.TextField(
@@ -138,3 +142,8 @@ class Comment(models.Model):
 
     def __str__(self):
         return self.text
+
+    def get_absolute_url(self):
+        # Так как у комментария нет собственной страницы,
+        # возвращаем страницу поста, к которому он относится
+        return reverse("blog:post_detail", kwargs={"post_id": self.post.pk})

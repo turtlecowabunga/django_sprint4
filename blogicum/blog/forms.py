@@ -2,13 +2,7 @@ from django import forms
 from django.forms import models
 
 
-from .models import Comment, User, Post
-
-
-class ProfileEditForm(models.ModelForm):
-    class Meta:
-        model = User
-        fields = ('username', 'first_name', 'last_name', 'email',)
+from .models import Comment, Post
 
 
 class CreatePostForm(models.ModelForm):
