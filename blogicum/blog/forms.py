@@ -5,17 +5,17 @@ from django.forms import models
 from .models import Comment, Post
 
 
-class CreatePostForm(models.ModelForm):
+class PostForm(models.ModelForm):
     class Meta:
         model = Post
         fields = ('title', 'text', 'category', 'location',
-                  'image', 'pub_date',)
+                  'image', 'pub_date', 'is_published')
         widgets = {
             'pub_date': forms.DateInput(attrs={'type': 'date'}),
         }
 
 
-class CreateCommentForm(models.ModelForm):
+class CommentForm(models.ModelForm):
     class Meta:
         model = Comment
         fields = ('text',)

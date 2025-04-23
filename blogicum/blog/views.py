@@ -2,7 +2,6 @@ from django.shortcuts import get_object_or_404, redirect
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Count
 from django.http import Http404
 from django.views.generic import (CreateView, DetailView,
                                   DeleteView, ListView, UpdateView)
@@ -11,7 +10,7 @@ from django.urls import reverse_lazy
 
 from .models import Comment, Category, Post
 from .utils import get_publishable_posts, create_paginator
-from .forms import CreatePostForm, CreateCommentForm
+from .forms import PostForm, CommentForm
 
 User = get_user_model()
 
@@ -59,7 +58,7 @@ class PostDetailView(DetailView):
                 and post.category.is_published
                 and post.pub_date <= timezone.now()):
             context['comments'] = post.comments.all()
-            context['form'] = CreateCommentForm()
+            context['form'] = CommentForm()
             return context
         else:
             raise Http404()
@@ -76,10 +75,7 @@ class CategoryPostsListView(ListView):
             slug=self.kwargs.get('category_slug'),
             is_published=True,
         )
-        self.queryset = self.category.posts.filter(
-            is_published=True,
-            pub_date__lte=timezone.now()
-        ).annotate(comment_count=Count('comments'))
+        self.queryset = get_publishable_posts(category=self.category)
         return super().get_queryset()
 
     def get_context_data(self, **kwargs):
@@ -98,11 +94,7 @@ class ProfileDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         profile = context['profile']
-        # При использовании annotate сортировка, указанная в
-        # ordering мета-класса модели, не работает, поэтому
-        # необходимо явно указывать order_by
-        post_list = profile.posts.annotate(
-            comment_count=Count('comments')).order_by('-pub_date')
+        post_list = get_publishable_posts(author=profile)
         context['page_obj'] = create_paginator(self.request, post_list)
         return context
 
@@ -111,7 +103,7 @@ class ProfileDetailView(DetailView):
 class PostCreateView(LoginRequiredMixin, CreateView):
     template_name = 'blog/create.html'
     model = Post
-    form_class = CreatePostForm
+    form_class = PostForm
 
     def form_valid(self, form):
         form.instance.author_id = self.request.user.id
@@ -130,9 +122,9 @@ class ProfileUpdateView(LoginRequiredMixin, UpdateView):
     fields = ('username', 'first_name', 'last_name', 'email',)
     model = User
 
-    def setup(self, request, *args, **kwargs):
-        super().setup(request, *args, **kwargs)
+    def get_object(self, queryset=None):
         self.kwargs['pk'] = self.request.user.id
+        return super().get_object(queryset)
 
     def get_success_url(self):
         self.success_url = reverse_lazy(
@@ -144,7 +136,7 @@ class ProfileUpdateView(LoginRequiredMixin, UpdateView):
 
 class PostUpdateView(AuthorRequiredMixin, UpdateView):
     template_name = 'blog/create.html'
-    form_class = CreatePostForm
+    form_class = PostForm
     model = Post
     pk_url_kwarg = 'post_id'
 
@@ -157,7 +149,7 @@ class PostDeleteView(AuthorRequiredMixin, DeleteView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['form'] = CreatePostForm(instance=context['post'])
+        context['form'] = PostForm(instance=context['post'])
         return context
 
 
@@ -166,16 +158,20 @@ class CommentAddRedirectView(LoginRequiredMixin, RedirectView):
 
     def get(self, request, *args, **kwargs):
         # Существует ли пост с таким id, если нет, ошибка 404
-        get_object_or_404(Post, pk=self.kwargs.get('post_id'))
+        self.post_instance = get_object_or_404(
+            Post, pk=self.kwargs.get('post_id')
+        )
         return super().get(request, *args, **kwargs)
 
     def get_redirect_url(self, *args, **kwargs):
         if self.request.method == 'POST':
-            Comment.objects.create(
-                text=self.request.POST['text'],
-                post_id=self.kwargs.get('post_id'),
-                author_id=self.request.user.id,
+            form = CommentForm(
+                data={'text': self.request.POST['text']}
             )
+            if form.is_valid():
+                form.instance.post = self.post_instance
+                form.instance.author = self.request.user
+                form.save()
         return super().get_redirect_url(*args, **kwargs)
 
 
@@ -183,7 +179,7 @@ class CommentUpdateView(LoginRequiredMixin, AuthorRequiredMixin, UpdateView):
     template_name = 'blog/comment.html'
     model = Comment
     pk_url_kwarg = 'comment_id'
-    form_class = CreateCommentForm
+    form_class = CommentForm
 
 
 class CommentDeleteView(LoginRequiredMixin, AuthorRequiredMixin, DeleteView):
